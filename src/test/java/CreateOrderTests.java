@@ -1,6 +1,6 @@
+import client.IngredientClient;
 import client.OrderClient;
 import client.UserClient;
-import io.qameta.allure.Description;
 import io.restassured.response.Response;
 import model.Order;
 import model.User;
@@ -8,16 +8,22 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import utils.IngredientGenerator;
 import utils.UserGenerator;
 
 import java.util.List;
+import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.notNullValue;
 
 public class CreateOrderTests {
 
     private UserClient userClient = new UserClient();
     private OrderClient orderClient = new OrderClient();
+    private IngredientClient ingredientClient = new IngredientClient();
     private User user;
     private String accessToken;
 
@@ -28,6 +34,7 @@ public class CreateOrderTests {
         accessToken = createResponse.then().extract().path("accessToken");
     }
 
+
     @AfterEach
     public void tearDown() {
         if (accessToken != null) {
@@ -35,21 +42,41 @@ public class CreateOrderTests {
         }
     }
 
-    @Test
-    @DisplayName("Проверить создание заказа с авторизацией и ингредиентами")
-    @Description("Проверка успешного создания заказа для авторизованного пользователя")
-    public void createOrderWithAuthAndIngredientsTest() {
-        Order order = new Order(List.of("61c0c5a71d1f82001bdaaa6d")); // пример валидного ингредиента
-        Response response = orderClient.createOrder(accessToken, order);
-        response.then().statusCode(200).body("success", equalTo(true));
+    static Stream<List<String>> ingredientCombinations() {
+        return Stream.of(
+                IngredientGenerator.getRandomIngredientIds(1),
+                IngredientGenerator.getRandomIngredientIds(2),
+                IngredientGenerator.getRandomIngredientIds(3)
+        );
     }
 
-    @Test
-    @DisplayName("Проверить создание заказа без авторизации")
-    public void createOrderWithoutAuthTest() {
-        Order order = new Order(List.of("61c0c5a71d1f82001bdaaa6d"));
+    @ParameterizedTest
+    @MethodSource("ingredientCombinations")
+    @DisplayName("Создание заказа с разными комбинациями ингредиентов (авторизованный пользователь)")
+    public void createOrderWithVariousIngredientsTest(List<String> ingredientIds) {
+        Order order = new Order(ingredientIds);
+        Response response = orderClient.createOrder(accessToken, order);
+
+        response.then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("name", notNullValue())
+                .body("order.number", notNullValue())
+                .body("order.owner", notNullValue());
+    }
+
+    @ParameterizedTest
+    @MethodSource("ingredientCombinations")
+    @DisplayName("Создание заказа с разными комбинациями ингредиентов (неавторизованный пользователь)")
+    public void createOrderWithoutAuthTest(List<String> ingredientIds) {
+        Order order = new Order(ingredientIds);
         Response response = orderClient.createOrder(null, order);
-        response.then().statusCode(200).body("success", equalTo(true)); // разрешено без токена
+
+        response.then()
+                .statusCode(200)
+                .body("success", equalTo(true))
+                .body("name", notNullValue())
+                .body("order.number", notNullValue());
     }
 
     @Test
